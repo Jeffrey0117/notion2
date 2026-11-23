@@ -12,6 +12,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { Editor, EditorContent } from "@tiptap/react";
 import { Document } from "@tiptap/extension-document";
@@ -20,24 +21,34 @@ import {
   RecentlyUpdated,
   type RecentlyUpdatedAttributes,
 } from "@docmost/editor-ext";
+import { createStore, Provider } from "jotai";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import api from "@/lib/api-client";
+import { pageEditorBindingAtom } from "@/features/editor/atoms/editor-atoms";
 import { useGetSpaceBySlugQuery } from "@/features/space/queries/space-query";
 import { EditorSpaceContext } from "./editor-space-context";
 import RecentlyUpdatedView from "./recently-updated-view";
 
 vi.mock("@/lib/api-client", () => ({ default: { post: vi.fn() } }));
 vi.mock("@/features/space/queries/space-query", () => ({
-  useGetSpaceBySlugQuery: vi.fn(() => ({})),
+  useGetSpaceBySlugQuery: vi.fn((key?: string) => ({
+    data: key === spaceId || key === "team" ? teamSpace : undefined,
+  })),
   useGetSpacesQuery: () => ({
-    data: { items: [{ id: otherId, name: "Engineering" }] },
+    data: { items: [teamSpace, { id: otherId, name: "Engineering" }] },
   }),
 }));
 vi.mock("@/features/label/queries/label-query", () => ({
   useWorkspaceLabelsQuery: () => ({
     data: {
-      items: [{ name: "review" }, { name: "-draft" }, { name: "draft" }],
+      items: [
+        { name: "review" },
+        { name: "-draft" },
+        { name: "draft" },
+        { name: oversizedLabel },
+        { name: boundaryLabel },
+      ],
     },
   }),
 }));
@@ -53,12 +64,15 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 vi.mock("@/lib/time", () => ({
-  formattedDate: () => "",
+  formatFullDateTime: () => "Aug 01, 2026, 8:30AM",
   shortTimeAgo: () => "",
 }));
 
 const spaceId = "de44053e-d614-453b-9706-1737faf19b87";
+const teamSpace = { id: spaceId, name: "Product design", slug: "team" };
 const otherId = "dcb7b4d5-a068-448d-9f18-e8b0684ee57e";
+const oversizedLabel = "x".repeat(257);
+const boundaryLabel = "x".repeat(254) + "📌☀️";
 const editors: Editor[] = [];
 
 function show(
@@ -72,13 +86,13 @@ function show(
       Text,
       RecentlyUpdated.configure({ view: RecentlyUpdatedView }),
     ],
-    editable: true,
     content: { type: "doc", content: [{ type: "recentlyUpdated", attrs }] },
   });
   editors.push(editor);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const store = createStore();
   render(
     <MemoryRouter initialEntries={[path]}>
       <MantineProvider env="test">
@@ -103,11 +117,15 @@ function show(
         </QueryClientProvider>
       </MantineProvider>
     </MemoryRouter>,
+    {
+      wrapper: ({ children }) => <Provider store={store}>{children}</Provider>,
+    },
   );
-  return { editor, queryClient };
+  return { editor, queryClient, store };
 }
 
 beforeAll(() => {
+  HTMLElement.prototype.scrollIntoView ??= vi.fn();
   globalThis.ResizeObserver ??= class {
     observe() {}
     unobserve() {}
@@ -152,6 +170,65 @@ it("waits for a source space before requesting authenticated rows", () => {
   expect(api.post).not.toHaveBeenCalled();
 });
 
+it("closes settings on a silent switch to Read and restores the button on Edit", async () => {
+  vi.mocked(api.post).mockResolvedValue({ data: [] });
+  const { editor, store } = show("/s/team", {}, spaceId);
+  const settings = { name: "Recently updated settings" };
+  const switchMode = (editable: boolean) =>
+    act(() => {
+      editor.setEditable(editable, false);
+      store.set(pageEditorBindingAtom, { pageId: "host", editor, editable });
+    });
+
+  await screen.findByText("No matching pages");
+  switchMode(true);
+  fireEvent.click(screen.getByRole("button", settings));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  switchMode(false);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("button", settings)).toBeNull();
+  switchMode(true);
+  expect(screen.getByRole("button", settings)).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it.each(["@self", spaceId])(
+  "shows the containing space by name for %s and clears it to include all spaces",
+  async (value) => {
+    vi.mocked(api.post).mockResolvedValue({ data: [] });
+    const { editor } = show("/s/team", { spaces: [value] }, spaceId);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Recently updated settings" }),
+    );
+    const dialog = within(screen.getByRole("dialog"));
+    const spaces = dialog.getByRole("combobox", { name: "Spaces" });
+    const remove = dialog.getByRole("button", {
+      name: "Remove Product design",
+    });
+    fireEvent.click(spaces);
+    expect(dialog.queryByRole("option", { name: "Product design" })).toBeNull();
+    expect(dialog.queryByRole("option", { name: "Current space" })).toBeNull();
+    fireEvent.click(remove);
+    act(() => spaces.focus());
+    const namedSpace = await dialog.findByRole("option", {
+      name: "Product design",
+    });
+    fireEvent.click(namedSpace);
+    fireEvent.click(
+      dialog.getByRole("button", { name: "Remove Product design" }),
+    );
+    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+
+    expect(editor.getJSON().content[0].attrs.spaces).toEqual([]);
+    await waitFor(() =>
+      expect(api.post).toHaveBeenLastCalledWith(
+        "/pages/recently-updated",
+        expect.objectContaining({ spaceId, spaces: [] }),
+      ),
+    );
+  },
+);
+
 it.each([
   {
     field: "spaces",
@@ -160,9 +237,21 @@ it.each([
     extra: "?another-space",
   },
   {
+    field: "excludeSpaces",
+    label: "Exclude spaces",
+    kept: ["@personal"],
+    extra: "?" + "x".repeat(256),
+  },
+  {
     field: "labels",
     label: "Labels",
     kept: ["a".repeat(254) + "📌☀️"],
+    extra: "x".repeat(257),
+  },
+  {
+    field: "excludeLabels",
+    label: "Exclude labels",
+    kept: ["-literal"],
     extra: "x".repeat(257),
   },
 ])(
@@ -190,6 +279,7 @@ it.each([
     fireEvent.click(
       screen.getByRole("button", { name: "Recently updated settings" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
     expect(screen.getByText(extra)).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("combobox", { name: label }), {
       key: "Backspace",
@@ -211,6 +301,7 @@ it("loads once across edits, polling intervals, focus, reconnect and recent-page
     id: "p",
     slugId: "abc",
     title: "First",
+    icon: "📘",
     spaceSlug: "destination",
     lastEditorName: "Alex Morgan",
     lastEditorAvatarUrl: "alex.png",
@@ -222,14 +313,17 @@ it("loads once across edits, polling intervals, focus, reconnect and recent-page
   const { editor, queryClient } = show("/s/team", legacyOptions, spaceId);
   const link = await screen.findByRole("link", { name: /First.*Alex Morgan/ });
   expect(link.getAttribute("href")).toBe("/s/destination/p/first-abc");
-  expect(link.querySelector("img")?.getAttribute("src")).toContain(
-    "/attachments/img/avatar/alex.png",
-  );
+  expect(within(link).getByText("📘")).toBeTruthy();
+  expect(link.querySelector("img")).toBeNull();
   expect(api.post).toHaveBeenCalledWith("/pages/recently-updated", {
     spaceId,
     limit: 15,
     spaces: [otherId],
+    excludeSpaces: [],
+    spaceMatch: "any",
     labels: [],
+    excludeLabels: [],
+    match: "any",
   });
   expect(
     screen.getByRole("button", { name: "Recently updated settings" }),
@@ -246,7 +340,12 @@ it("loads once across edits, polling intervals, focus, reconnect and recent-page
     });
     await vi.advanceTimersByTimeAsync(65_000);
   });
-  expect(screen.queryByRole("button")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Recently updated settings" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Refresh recently updated pages" }),
+  ).toBeTruthy();
   expect(screen.getByRole("link", { name: /First.*Alex Morgan/ })).toBeTruthy();
   expect(api.post).toHaveBeenCalledTimes(1);
 
@@ -261,12 +360,63 @@ it("loads once across edits, polling intervals, focus, reconnect and recent-page
   expect(api.post).toHaveBeenLastCalledWith("/pages/recently-updated", {
     spaceId,
     labels: [],
+    excludeLabels: [],
+    match: "any",
     spaces: [otherId],
+    excludeSpaces: [],
+    spaceMatch: "any",
     limit: 4,
   });
 });
 
-it("edits the limit, heading and signed name choices while preserving unresolved tokens", async () => {
+it("refreshes on demand in read mode and shows space names only when results span spaces", async () => {
+  const page = {
+    id: "p1",
+    slugId: "abc",
+    title: "Decision record",
+    spaceSlug: "eng",
+    spaceName: "Engineering",
+    lastEditorName: "Alex Morgan",
+    updatedAt: "2026-08-01T08:30:00Z",
+  };
+  const other = {
+    ...page,
+    id: "p2",
+    slugId: "xyz",
+    title: "Release notes",
+    spaceSlug: "docs",
+    spaceName: "Documentation",
+    lastEditorName: null,
+  };
+  vi.mocked(api.post)
+    .mockResolvedValueOnce({ data: [page, other] })
+    .mockResolvedValueOnce({ data: [page] });
+  const { editor } = show("/s/team", { spaces: ["@all"] }, spaceId);
+  act(() => editor.setEditable(false));
+  expect(
+    screen.getByRole("heading", { name: "Recently updated" }),
+  ).toBeTruthy();
+  const first = await screen.findByRole("link", {
+    name: /Decision record.*Updated by Alex Morgan.*Engineering/,
+  });
+  expect(first.querySelector("time")?.dateTime).toBe(page.updatedAt);
+  expect(first.querySelector("time")?.title).toBe(
+    "Updated at Aug 01, 2026, 8:30AM",
+  );
+  const second = screen.getByRole("link", {
+    name: /Release notes.*Documentation/,
+  });
+  expect(second.textContent).not.toContain("Updated by");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh recently updated pages" }),
+  );
+  await waitFor(() => expect(screen.queryByText("Release notes")).toBeNull());
+  expect(first.textContent).not.toContain("Engineering");
+  expect(first.textContent).toContain("Updated by Alex Morgan");
+  expect(api.post).toHaveBeenCalledTimes(2);
+});
+
+it("edits the limit, heading and space choices while preserving literal labels", async () => {
   vi.mocked(api.post).mockResolvedValue({ data: [] });
   const { editor } = show(
     "/s/team",
@@ -285,13 +435,14 @@ it("edits the limit, heading and signed name choices while preserving unresolved
   act(() => space.focus());
   fireEvent.input(space, {
     inputType: "insertText",
-    data: "-Eng",
-    target: { value: "-Eng" },
+    data: "Eng",
+    target: { value: "Eng" },
   });
-  fireEvent.click(await screen.findByRole("option", { name: "-Engineering" }));
-  expect(screen.getByText("-Engineering")).toBeTruthy();
+  fireEvent.click(await screen.findByRole("option", { name: "Engineering" }));
+  expect(screen.getByText("Engineering")).toBeTruthy();
   expect(screen.queryByRole("combobox", { name: "Last edited by" })).toBeNull();
-  fireEvent.change(screen.getByLabelText("Maximum results"), {
+  fireEvent.click(screen.getByRole("button", { name: "More options" }));
+  fireEvent.change(screen.getByLabelText("Show up to"), {
     target: { value: "3" },
   });
   fireEvent.click(screen.getByLabelText("Show heading"));
@@ -299,21 +450,68 @@ it("edits the limit, heading and signed name choices while preserving unresolved
   expect(editor.getJSON().content[0].attrs).toEqual({
     limit: 3,
     hideHeading: true,
-    spaces: ["-" + otherId],
+    spaces: [otherId],
+    excludeSpaces: [],
+    spaceMatch: "any",
     labels: ["?missing", "+review"],
+    excludeLabels: [],
+    match: "any",
   });
   await waitFor(() => {
     const settings = screen.getByRole("button", {
       name: "Recently updated settings",
     });
     expect(screen.queryByText("Recently updated", { exact: true })).toBeNull();
+    const block = within(
+      settings.closest<HTMLElement>('[data-type="recently-updated"]')!,
+    );
+    expect(block.getByText("No matching pages")).toBeTruthy();
     expect(
-      settings.parentElement.contains(screen.getByText("No matching pages")),
-    ).toBe(true);
+      block.getByRole("button", { name: "Refresh recently updated pages" }),
+    ).toBeTruthy();
   });
 });
 
-it("keeps a literal signed label as an optional match and shows its stored name", async () => {
+it.each([5, 15])(
+  "preserves concurrent filter edits when saving a limit of %i",
+  async (limit) => {
+    vi.mocked(api.post).mockResolvedValue({ data: [] });
+    const { editor } = show(
+      "/s/team",
+      { labels: ["review"], limit: 15 },
+      spaceId,
+    );
+    await screen.findByText("No matching pages");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Recently updated settings" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    const field = screen.getByLabelText("Show up to");
+    fireEvent.change(field, { target: { value: "8" } });
+    fireEvent.change(field, { target: { value: String(limit) } });
+    act(() => {
+      editor.view.dispatch(
+        editor.state.tr
+          .setNodeAttribute(0, "labels", ["release"])
+          .setNodeAttribute(0, "spaces", ["@favorite"]),
+      );
+    });
+    const beforeSave = editor.state.doc;
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const expected = { limit, labels: ["release"], spaces: ["@favorite"] };
+    expect(editor.state.doc.firstChild.attrs).toMatchObject(expected);
+    if (limit === 15) expect(editor.state.doc).toBe(beforeSave);
+    await waitFor(() =>
+      expect(api.post).toHaveBeenLastCalledWith(
+        "/pages/recently-updated",
+        expect.objectContaining(expected),
+      ),
+    );
+  },
+);
+
+it("saves literal names, exclusions and the match mode, then requests the new filter", async () => {
   vi.mocked(api.post).mockResolvedValue({ data: [] });
   const { editor } = show("/s/team", { labels: ["review"] }, spaceId);
   fireEvent.click(
@@ -324,6 +522,10 @@ it("keeps a literal signed label as an optional match and shows its stored name"
       true,
     ),
   );
+  fireEvent.click(screen.getByRole("button", { name: "More options" }));
+  expect(
+    screen.queryByRole("radiogroup", { name: "Label matching" }),
+  ).toBeNull();
   const labels = screen.getByRole("combobox", { name: "Labels" });
   act(() => labels.focus());
   fireEvent.input(labels, {
@@ -332,13 +534,203 @@ it("keeps a literal signed label as an optional match and shows its stored name"
     target: { value: "draft" },
   });
   fireEvent.click(await screen.findByRole("option", { name: "-draft" }));
+  expect(
+    within(
+      screen.getByRole("radiogroup", { name: "Label matching" }),
+    ).getByRole("radio", { name: "Any", checked: true }),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(
+      screen.getByRole("radiogroup", { name: "Label matching" }),
+    ).getByRole("radio", { name: "All" }),
+  );
+  expect(screen.getByText("Pages need all of these labels.")).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Exclude labels" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Exclude labels" }));
+  const excluded = screen.getByRole("combobox", { name: "Exclude labels" });
+  expect(document.activeElement).toBe(excluded);
+  fireEvent.change(excluded, { target: { value: "draft" } });
+  fireEvent.click(
+    within(screen.getByRole("listbox", { name: "Exclude labels" })).getByRole(
+      "option",
+      { name: "draft" },
+    ),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
-  expect(editor.getJSON().content[0].attrs.labels).toEqual([
-    "review",
-    "\\-draft",
-  ]);
+  const filters = {
+    labels: ["review", "-draft"],
+    excludeLabels: ["draft"],
+    match: "all",
+  };
+  expect(editor.getJSON().content[0].attrs).toMatchObject(filters);
+  await waitFor(() =>
+    expect(api.post).toHaveBeenLastCalledWith(
+      "/pages/recently-updated",
+      expect.objectContaining(filters),
+    ),
+  );
   fireEvent.click(
     screen.getByRole("button", { name: "Recently updated settings" }),
   );
-  expect(screen.getByText("-draft")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "More options" }));
+  expect(
+    within(
+      screen.getByRole("radiogroup", { name: "Label matching" }),
+    ).getByRole("radio", { name: "All", checked: true }),
+  ).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Exclude labels" })).toBeTruthy();
+});
+
+it.each(["Labels", "Exclude labels"])(
+  "offers only valid catalog labels in %s and preserves other settings",
+  async (field) => {
+    vi.mocked(api.post).mockResolvedValue({ data: [] });
+    const { editor } = show(
+      "/s/team",
+      { labels: ["review"], excludeLabels: ["draft"], limit: 7 },
+      spaceId,
+    );
+    const original = editor.state.doc.firstChild.attrs;
+    fireEvent.click(
+      screen.getByRole("button", { name: "Recently updated settings" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    const picker = screen.getByRole("combobox", { name: field });
+    fireEvent.click(picker);
+    fireEvent.change(picker, { target: { value: oversizedLabel } });
+    expect(screen.queryByRole("option", { name: oversizedLabel })).toBeNull();
+    fireEvent.change(picker, { target: { value: boundaryLabel } });
+    fireEvent.click(await screen.findByRole("option", { name: boundaryLabel }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const key = field === "Labels" ? "labels" : "excludeLabels";
+    expect(editor.state.doc.firstChild.attrs).toEqual({
+      ...original,
+      [key]: [...original[key], boundaryLabel],
+    });
+  },
+);
+
+it("allows empty label filters and discards display changes on cancel", async () => {
+  vi.mocked(api.post).mockResolvedValue({ data: [] });
+  const { editor } = show("/s/team", {}, spaceId);
+  await screen.findByText("No matching pages");
+  const open = screen.getByRole("button", {
+    name: "Recently updated settings",
+  });
+  fireEvent.click(open);
+  const dialog = within(
+    screen.getByRole("dialog", { name: "Recently updated" }),
+  );
+  expect(dialog.getAllByRole("combobox")).toEqual([
+    dialog.getByRole("combobox", { name: "Spaces" }),
+  ]);
+  expect(dialog.queryByRole("region", { name: "Display" })).toBeNull();
+  expect(
+    dialog.getByText("Leave empty to include all accessible spaces."),
+  ).toBeTruthy();
+  fireEvent.click(
+    dialog.getByRole("button", { name: "More options", expanded: false }),
+  );
+  expect(dialog.getByRole("region", { name: "Display" })).toBeTruthy();
+  expect(dialog.getByRole("combobox", { name: "Labels" })).toBeTruthy();
+  expect(dialog.getByText("Add labels to narrow the list.")).toBeTruthy();
+  const save = dialog.getByRole<HTMLButtonElement>("button", { name: "Save" });
+  expect(save.disabled).toBe(false);
+  fireEvent.change(dialog.getByLabelText("Show up to"), {
+    target: { value: "" },
+  });
+  expect(save.disabled).toBe(true);
+  fireEvent.click(dialog.getByRole("checkbox", { name: "Show heading" }));
+  fireEvent.click(
+    dialog.getByRole("button", { name: "More options", expanded: true }),
+  );
+  fireEvent.click(
+    dialog.getByRole("button", { name: "More options", expanded: false }),
+  );
+  expect(
+    dialog.getByRole("checkbox", { name: "Show heading", checked: false }),
+  ).toBeTruthy();
+  expect(save.disabled).toBe(true);
+  fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(editor.state.doc.firstChild.attrs).toMatchObject({
+    limit: 15,
+    hideHeading: false,
+    labels: [],
+  });
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+
+it("saves the space match and exclusions independently of label matching", async () => {
+  vi.mocked(api.post).mockResolvedValue({ data: [] });
+  const { editor } = show(
+    "/s/team",
+    { spaces: ["@favorite", "@global"], labels: ["review"] },
+    spaceId,
+  );
+  const open = screen.getByRole("button", {
+    name: "Recently updated settings",
+  });
+  fireEvent.click(open);
+  const dialog = within(
+    screen.getByRole("dialog", { name: "Recently updated" }),
+  );
+  fireEvent.click(
+    within(
+      dialog.getByRole("radiogroup", { name: "Space matching" }),
+    ).getByRole("radio", { name: "All" }),
+  );
+  fireEvent.click(dialog.getByRole("button", { name: "Exclude spaces" }));
+  const excluded = dialog.getByRole("combobox", { name: "Exclude spaces" });
+  fireEvent.change(excluded, { target: { value: "Eng" } });
+  fireEvent.click(await dialog.findByRole("option", { name: "Engineering" }));
+  fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+  const filters = {
+    spaces: ["@favorite", "@global"],
+    excludeSpaces: [otherId],
+    spaceMatch: "all",
+    labels: ["review"],
+    match: "any",
+  };
+  expect(editor.state.doc.firstChild.attrs).toMatchObject(filters);
+  await waitFor(() =>
+    expect(api.post).toHaveBeenLastCalledWith(
+      "/pages/recently-updated",
+      expect.objectContaining(filters),
+    ),
+  );
+  fireEvent.click(open);
+  expect(screen.getByRole("combobox", { name: "Exclude spaces" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Remove Engineering" }),
+  ).toBeTruthy();
+});
+
+it("refetches for changes to just the mode or just the exclusions and supports exclude-only settings", async () => {
+  vi.mocked(api.post).mockResolvedValue({ data: [] });
+  const { editor } = show("/s/team", { labels: ["a", "b"] }, spaceId);
+  await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+  const change = (
+    field: keyof RecentlyUpdatedAttributes,
+    value: string | string[],
+  ) =>
+    act(() => {
+      editor.view.dispatch(editor.state.tr.setNodeAttribute(0, field, value));
+    });
+  change("match", "all");
+  await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
+  change("excludeLabels", ["?"]);
+  await waitFor(() => expect(api.post).toHaveBeenCalledTimes(3));
+  change("labels", []);
+  await waitFor(() => expect(api.post).toHaveBeenCalledTimes(4));
+  expect(api.post).toHaveBeenLastCalledWith("/pages/recently-updated", {
+    spaceId,
+    spaces: [],
+    excludeSpaces: [],
+    spaceMatch: "any",
+    limit: 15,
+    labels: [],
+    excludeLabels: ["?"],
+    match: "all",
+  });
 });

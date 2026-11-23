@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useDebouncedValue } from "@mantine/hooks";
 import {
   type ComboboxItem,
+  type MultiSelectProps,
   Group,
   MultiSelect,
   Pill,
@@ -31,20 +32,17 @@ interface SingleSpaceSelectProps {
   withinPortal?: boolean;
 }
 
-interface MultipleSpaceSelectProps {
+interface MultipleSpaceSelectProps extends Pick<
+  MultiSelectProps,
+  "id" | "label" | "aria-label" | "description" | "autoFocus" | "placeholder"
+> {
   multiple: true;
   value: string[];
   onChange: (values: string[]) => void;
-  label: string;
-  placeholder?: string;
-  scopes?: ComboboxItem[];
-  withOperators?: boolean;
+  unavailableLabel?: string;
+  scopes?: (ComboboxItem & { spaceId?: string; logo?: string })[];
   maxValues: number;
   withinPortal?: boolean;
-}
-
-function operator(value: string, enabled: boolean) {
-  return enabled && /^[+-]/.test(value) ? value[0] : "";
 }
 
 function renderSpaceOption({
@@ -64,14 +62,19 @@ function renderSpaceOption({
 
 interface SpacePillProps {
   token: string;
-  prefix: string;
   space?: SpaceIcon;
+  unavailableLabel?: string;
   onRemove: () => void;
 }
 
-function SpacePill({ token, prefix, space, onRemove }: SpacePillProps) {
+function SpacePill({
+  token,
+  space,
+  unavailableLabel,
+  onRemove,
+}: SpacePillProps) {
   const { t } = useTranslation();
-  const label = space ? prefix + space.name : token;
+  const label = space?.name ?? unavailableLabel ?? token;
   return (
     <Pill
       withRemoveButton
@@ -100,10 +103,7 @@ function UnlistedSpacePill({
   listedSpaces,
   ...pill
 }: SpacePillProps & { listedSpaces: ISpace[] }) {
-  const { data: space } = useUnlistedSpaceQuery(
-    pill.token.slice(pill.prefix.length),
-    listedSpaces,
-  );
+  const { data: space } = useUnlistedSpaceQuery(pill.token, listedSpaces);
   return <SpacePill {...pill} space={space} />;
 }
 
@@ -112,11 +112,7 @@ export function SpaceSelect(
 ) {
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState("");
-  const withOperators = props.multiple && props.withOperators;
-  const prefix = operator(searchValue, withOperators);
-  const search = props.multiple
-    ? searchValue.slice(prefix.length).trim()
-    : searchValue;
+  const search = props.multiple ? searchValue.trim() : searchValue;
   const [debouncedQuery] = useDebouncedValue(
     search,
     props.multiple ? 250 : 500,
@@ -157,22 +153,41 @@ export function SpaceSelect(
   };
 
   if (props.multiple === true) {
-    const scopes: Pick<ISpace, "id" | "name" | "logo">[] = (
-      props.scopes ?? []
-    ).map(({ value, label }) => ({ id: value, name: label }));
-    const choices = [...scopes, ...(spaces?.items ?? [])].map(
-      ({ id, name, logo }) => ({
-        value: prefix + id,
-        label: prefix + name,
-        name,
-        logo,
-      }),
+    const scopes = (props.scopes ?? []).map(
+      ({ value, label, spaceId, logo }) => {
+        const listed = spaceId ? knownSpaces.get(spaceId) : undefined;
+        return {
+          id: value,
+          name: listed?.name ?? label,
+          logo: listed?.logo ?? logo,
+          spaceId,
+        };
+      },
     );
+    // A relative scope and the space it resolves to share one choice.
+    const choices = [
+      ...scopes.filter(
+        ({ spaceId }) => !spaceId || !props.value.includes(spaceId),
+      ),
+      ...(spaces?.items ?? []).filter(
+        ({ id }) => !scopes.some((scope) => scope.spaceId === id),
+      ),
+    ].map(({ id, name, logo }) => ({
+      value: id,
+      label: name,
+      name,
+      logo,
+    }));
 
     return (
       <MultiSelect
         {...commonProps}
+        id={props.id}
+        aria-label={props["aria-label"]}
+        autoFocus={props.autoFocus}
         label={props.label}
+        description={props.description}
+        inputWrapperOrder={["label", "input", "description", "error"]}
         placeholder={props.placeholder}
         hidePickedOptions
         data={choices}
@@ -187,20 +202,26 @@ export function SpaceSelect(
           )
         }
         renderPill={({ value, onRemove }) => {
-          const prefix = operator(value, withOperators);
-          const id = value.slice(prefix.length);
           const space =
-            knownSpaces.get(id) ?? scopes.find((scope) => scope.id === id);
-          const pill = { token: value, prefix, onRemove };
+            knownSpaces.get(value) ??
+            scopes.find(
+              (scope) => scope.id === value || scope.spaceId === value,
+            );
+          const pill = {
+            token: value,
+            space,
+            onRemove,
+            unavailableLabel: props.unavailableLabel,
+          };
           if (
             !space &&
             spaces &&
             props.value.length <= props.maxValues &&
-            isUuid(id)
+            isUuid(value)
           ) {
             return <UnlistedSpacePill {...pill} listedSpaces={spaces.items} />;
           }
-          return <SpacePill {...pill} space={space} />;
+          return <SpacePill {...pill} />;
         }}
         comboboxProps={{ withinPortal: props.withinPortal }}
       />
