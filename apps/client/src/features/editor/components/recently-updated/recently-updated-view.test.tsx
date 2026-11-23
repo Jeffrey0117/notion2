@@ -79,6 +79,10 @@ function show(
   path: string,
   attrs: Partial<RecentlyUpdatedAttributes> = {},
   sourceId?: string,
+  {
+    editable = true,
+    templateSpaceId,
+  }: { editable?: boolean; templateSpaceId?: string } = {},
 ) {
   const editor = new Editor({
     extensions: [
@@ -86,6 +90,7 @@ function show(
       Text,
       RecentlyUpdated.configure({ view: RecentlyUpdatedView }),
     ],
+    editable,
     content: { type: "doc", content: [{ type: "recentlyUpdated", attrs }] },
   });
   editors.push(editor);
@@ -93,6 +98,13 @@ function show(
     defaultOptions: { queries: { retry: false } },
   });
   const store = createStore();
+  const content = templateSpaceId ? (
+    <EditorSpaceContext.Provider value={templateSpaceId}>
+      <EditorContent editor={editor} />
+    </EditorSpaceContext.Provider>
+  ) : (
+    <EditorContent editor={editor} />
+  );
   render(
     <MemoryRouter initialEntries={[path]}>
       <MantineProvider env="test">
@@ -104,13 +116,10 @@ function show(
                 "/share/:shareId/p/:pageSlug",
                 "/share/p/:pageSlug",
                 "/s/:spaceSlug",
+                "/templates",
                 "/templates/:templateId",
               ].map((path) => (
-                <Route
-                  key={path}
-                  path={path}
-                  element={<EditorContent editor={editor} />}
-                />
+                <Route key={path} path={path} element={content} />
               ))}
             </Routes>
           </EditorSpaceContext.Provider>
@@ -169,6 +178,61 @@ it("waits for a source space before requesting authenticated rows", () => {
   show("/templates/sample");
   expect(api.post).not.toHaveBeenCalled();
 });
+
+it.each([
+  { surface: "template editor", path: "/templates/sample", editable: true },
+  {
+    surface: "read-only template preview",
+    path: "/templates",
+    editable: false,
+  },
+  {
+    surface: "template preview inside another space",
+    path: "/s/other",
+    editable: false,
+    outerSpace: otherId,
+  },
+])(
+  "loads the template's own space in the $surface",
+  async ({ path, editable, outerSpace }) => {
+    vi.mocked(api.post).mockResolvedValue({
+      data: [
+        {
+          id: "result",
+          slugId: "abc",
+          title: "Design notes",
+          spaceSlug: "team",
+        },
+      ],
+    });
+    show(path, { spaces: ["@self"] }, outerSpace, {
+      editable,
+      templateSpaceId: spaceId,
+    });
+
+    expect(
+      await screen.findByRole("link", { name: "Design notes" }),
+    ).toBeTruthy();
+    expect(api.post).toHaveBeenCalledExactlyOnceWith(
+      "/pages/recently-updated",
+      expect.objectContaining({ spaceId, spaces: ["@self"] }),
+    );
+    if (editable) {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Recently updated settings" }),
+      );
+      expect(
+        within(screen.getByRole("dialog")).getByRole("button", {
+          name: "Remove Product design",
+        }),
+      ).toBeTruthy();
+    } else {
+      expect(
+        screen.queryByRole("button", { name: "Recently updated settings" }),
+      ).toBeNull();
+    }
+  },
+);
 
 it("closes settings on a silent switch to Read and restores the button on Edit", async () => {
   vi.mocked(api.post).mockResolvedValue({ data: [] });
