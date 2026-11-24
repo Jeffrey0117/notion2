@@ -105,12 +105,14 @@ export default function ExcalidrawView(props: NodeViewProps) {
       const uploadTarget = getEditorUploadTarget(editor);
       if (!uploadTarget) return;
 
-      let attachment: IAttachment = null;
-      if (attachmentId) {
-        attachment = await uploadFile(excalidrawSvgFile, uploadTarget, attachmentId);
-      } else {
-        attachment = await uploadFile(excalidrawSvgFile, uploadTarget);
-      }
+      const attachment: IAttachment = await uploadFile(
+        excalidrawSvgFile,
+        uploadTarget,
+        {
+          type: "diagram",
+          attachmentId,
+        },
+      );
 
       if (updateSrc) {
         updateAttributes({

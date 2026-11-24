@@ -46,6 +46,51 @@ describe('HTML provider links', () => {
   });
 });
 
+it.each(['drawio', 'excalidraw'])(
+  'preserves the %s diagram type when a regular attachment shares its filename in an archive',
+  async (type) => {
+    const fileName = `diagram.${type}.svg`;
+    const drawing = `drawing/${fileName}`;
+    const regular = `regular/${fileName}`;
+    const service = new ImportAttachmentService(null, null, null);
+    const upload = jest
+      .spyOn(service as any, 'uploadWithRetry')
+      .mockResolvedValue(undefined);
+
+    await service.processAttachments({
+      html:
+        `<div data-type="attachment" data-attachment-url="${drawing}"></div>` +
+        `<div data-type="attachment" data-attachment-url="${regular}"></div>` +
+        `<div data-type="${type}" data-src="${drawing}"></div>`,
+      pageRelativePath: 'page.html',
+      extractDir: '/archive',
+      pageId: 'page',
+      fileTask: {
+        workspaceId: 'workspace',
+        spaceId: 'space',
+        creatorId: 'user',
+      } as FileTask,
+      attachmentCandidates: new Map(
+        [drawing, regular].map((path) => [path, join('/archive', path)]),
+      ),
+    });
+
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(upload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        abs: join('/archive', drawing),
+        diagramType: type,
+      }),
+    );
+    expect(upload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        abs: join('/archive', regular),
+        diagramType: null,
+      }),
+    );
+  },
+);
+
 it('preserves a link destination in the first heading of imported HTML', async () => {
   const doc = await ImportService.prototype.processHTML(
     '<h1>Guide<span data-type="section-anchor" data-id="intro"></span></h1>' +

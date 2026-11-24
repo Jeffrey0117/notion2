@@ -246,12 +246,14 @@ export function ExcalidrawMenu({ editor }: EditorMenuProps) {
       if (!uploadTarget) return;
       const attachmentId = editorState?.attachmentId;
 
-      let attachment: IAttachment = null;
-      if (attachmentId) {
-        attachment = await uploadFile(excalidrawSvgFile, uploadTarget, attachmentId);
-      } else {
-        attachment = await uploadFile(excalidrawSvgFile, uploadTarget);
-      }
+      const attachment: IAttachment = await uploadFile(
+        excalidrawSvgFile,
+        uploadTarget,
+        {
+          type: "diagram",
+          attachmentId,
+        },
+      );
 
       editor.commands.updateAttributes("excalidraw", {
         src: `/api/files/${attachment.id}/${attachment.fileName}?t=${new Date(attachment.updatedAt).getTime()}`,

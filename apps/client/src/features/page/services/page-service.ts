@@ -197,11 +197,14 @@ export async function getAttachmentInfo(
 export async function uploadFile(
   file: File,
   uploadTarget: UploadTarget,
-  attachmentId?: string,
+  options?: { attachmentId?: string; type?: "diagram" },
 ): Promise<IAttachment> {
   const formData = new FormData();
-  if (attachmentId) {
-    formData.append("attachmentId", attachmentId);
+  if (options?.attachmentId) {
+    formData.append("attachmentId", options.attachmentId);
+  }
+  if (options?.type) {
+    formData.append("type", options.type);
   }
   if ("pageId" in uploadTarget) {
     formData.append("pageId", uploadTarget.pageId);

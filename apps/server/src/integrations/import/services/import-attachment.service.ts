@@ -11,7 +11,11 @@ import { getMimeType, sanitizeFileName } from '../../../common/helpers';
 import { v7 } from 'uuid';
 import { FileTask } from '@docmost/db/types/entity.types';
 import { getAttachmentFolderPath } from '../../../core/attachment/attachment.utils';
-import { AttachmentType } from '../../../core/attachment/attachment.constants';
+import {
+  AttachmentType,
+  DIAGRAM_TYPE_BY_FILE_NAME,
+  type DiagramType,
+} from '../../../core/attachment/attachment.constants';
 import { unwrapFromParagraph } from '../utils/import-formatter';
 import { resolveRelativeAttachmentPath } from '../utils/import.utils';
 import { imageDimensionsFromData } from 'image-dimensions';
@@ -154,6 +158,7 @@ export class ImportAttachmentService {
                 fileSize: svgBuffer.length,
                 mimeType: 'image/svg+xml',
                 type: 'file',
+                diagramType: 'drawio',
                 fileExt: '.svg',
                 creatorId: fileTask.creatorId,
                 workspaceId: fileTask.workspaceId,
@@ -215,6 +220,8 @@ export class ImportAttachmentService {
       }
     }
 
+    // An ordinary link can point to a diagram before its editor block is visited.
+    const diagramTypesByAttachmentId = new Map<string, DiagramType>();
     const uploadOnce = (relPath: string) => {
       const abs = attachmentCandidates.get(relPath)!;
       const attachmentId = v7();
@@ -239,6 +246,7 @@ export class ImportAttachmentService {
           storageFilePath,
           attachmentId,
           fileNameWithExt,
+          diagramType: diagramTypesByAttachmentId.get(attachmentId) ?? null,
           ext,
           pageId,
           fileTask,
@@ -516,7 +524,11 @@ export class ImportAttachmentService {
         );
         if (!relPath) continue;
 
-        const { attachmentId, apiFilePath, abs } = processFile(relPath);
+        const { attachmentId, apiFilePath, abs, fileNameWithExt } =
+          processFile(relPath);
+        if (DIAGRAM_TYPE_BY_FILE_NAME.get(fileNameWithExt) === type) {
+          diagramTypesByAttachmentId.set(attachmentId, type);
+        }
         const fileName = path.basename(abs);
 
         const width = $oldDiv.attr('data-width') || '600';
@@ -899,6 +911,7 @@ export class ImportAttachmentService {
     storageFilePath: string;
     attachmentId: string;
     fileNameWithExt: string;
+    diagramType: DiagramType | null;
     ext: string;
     pageId: string;
     fileTask: FileTask;
@@ -937,6 +950,7 @@ export class ImportAttachmentService {
             id: attachmentId,
             filePath: storageFilePath,
             fileName: fileNameWithExt,
+            diagramType: opts.diagramType,
             fileSize: stat.size,
             mimeType: getMimeType(fileNameWithExt),
             type: 'file',

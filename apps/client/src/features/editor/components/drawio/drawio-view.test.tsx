@@ -132,8 +132,8 @@ describe("a draw.io diagram that has not been saved yet", () => {
     await waitFor(() => expect(uploadFile).toHaveBeenCalledTimes(2));
 
     const [first, second] = vi.mocked(uploadFile).mock.calls;
-    expect(first[2]).toBeUndefined();
-    expect(second[2]).toBe("att-1");
+    expect(first[2]).toEqual({ type: "diagram", attachmentId: undefined });
+    expect(second[2]).toEqual({ type: "diagram", attachmentId: "att-1" });
   });
 
   it("uploads once for one Save & Exit", async () => {
@@ -169,7 +169,7 @@ describe("a draw.io diagram that has not been saved yet", () => {
     await act(async () => uploads[1](attachment));
     await waitFor(() => expect(diagramEditor()).toBeNull());
 
-    expect(vi.mocked(uploadFile).mock.calls[1][2]).toBe("att-1");
+    expect(vi.mocked(uploadFile).mock.calls[1][2]?.attachmentId).toBe("att-1");
     expect(updateAttributes).toHaveBeenLastCalledWith(
       expect.objectContaining({
         src: expect.stringContaining("/api/files/att-1/"),

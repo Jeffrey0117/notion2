@@ -35,7 +35,19 @@ const USER = { id: 'user-id' };
 const WORKSPACE = { id: 'workspace-id', hostname: 'docs' };
 const PAGE_ID = 'page-id';
 const ATTACHMENT_ID = '0195f9d2-7d3e-7b1a-9c3f-1a2b3c4d5e6f';
-const EXISTING_KEY = `${WORKSPACE.id}/files/${ATTACHMENT_ID}/diagram.pdf`;
+const DRAWIO = 'diagram.drawio.svg';
+const EXCALIDRAW = 'diagram.excalidraw.svg';
+const EXISTING_KEY = `${WORKSPACE.id}/files/${ATTACHMENT_ID}/${DRAWIO}`;
+const pageDiagram = {
+  id: ATTACHMENT_ID,
+  pageId: PAGE_ID,
+  workspaceId: WORKSPACE.id,
+  type: 'file',
+  diagramType: 'drawio',
+  fileName: DRAWIO,
+  fileExt: '.svg',
+  filePath: EXISTING_KEY,
+};
 
 interface StorageFixture {
   driver: StorageDriver;
@@ -186,18 +198,11 @@ describe.each([
     routeError = new Promise((resolve) => (markRouteDone = resolve));
     fileReceived = new Promise((resolve) => (markFileReceived = resolve));
 
-    attachmentRepo.findById.mockResolvedValue({
-      id: ATTACHMENT_ID,
-      pageId: PAGE_ID,
-      fileExt: '.pdf',
-      workspaceId: WORKSPACE.id,
-    });
+    attachmentRepo.findById.mockResolvedValue(pageDiagram);
     attachmentRepo.insertAttachment.mockImplementation(async (row) => row);
     attachmentRepo.updateAttachment.mockImplementation(async (row, id) => ({
+      ...(await attachmentRepo.findById(id)),
       ...row,
-      id,
-      fileName: 'diagram.pdf',
-      fileExt: '.pdf',
     }));
 
     storage = await createStorage();
@@ -334,14 +339,12 @@ describe.each([
 
     it('refuses to overwrite a template file from a page upload', async () => {
       attachmentRepo.findById.mockResolvedValue({
-        id: ATTACHMENT_ID,
-        pageId: PAGE_ID,
+        ...pageDiagram,
+        pageId: null,
         templateId: 'template-id',
-        fileExt: '.pdf',
-        workspaceId: WORKSPACE.id,
       });
 
-      const response = await post(randomBytes(1024), {
+      const response = await postFile(DRAWIO, randomBytes(1024), {
         attachmentId: ATTACHMENT_ID,
       });
 
@@ -383,12 +386,15 @@ describe.each([
 
   describe('template uploads', () => {
     const TEMPLATE_ID = '0195f9d2-7d3e-7b1a-9c3f-aaaaaaaaaaaa';
-    const postTemplateFile = (fields: Record<string, string>) =>
+    const postTemplateFile = (
+      fields: Record<string, string>,
+      fileName = 'diagram.pdf',
+    ) =>
       app.inject({
         method: 'POST',
         url: '/files/upload',
         headers: MULTIPART_HEADERS,
-        payload: multipartBody('diagram.pdf', randomBytes(1024), fields),
+        payload: multipartBody(fileName, randomBytes(1024), fields),
       });
 
     beforeEach(() => {
@@ -492,7 +498,7 @@ describe.each([
       expect(row.pageId).toBeUndefined();
     });
 
-    it("overwrites the template's own file", async () => {
+    it("overwrites the template's own diagram", async () => {
       templateAccessService.findEditableTemplate.mockResolvedValue({
         id: TEMPLATE_ID,
         spaceId: null,
@@ -501,14 +507,18 @@ describe.each([
         id: ATTACHMENT_ID,
         pageId: null,
         templateId: TEMPLATE_ID,
-        fileExt: '.pdf',
+        type: 'file',
+        diagramType: 'excalidraw',
+        fileName: EXCALIDRAW,
+        fileExt: '.svg',
+        filePath: `${WORKSPACE.id}/files/${ATTACHMENT_ID}/${EXCALIDRAW}`,
         workspaceId: WORKSPACE.id,
       });
 
-      const response = await postTemplateFile({
-        templateId: TEMPLATE_ID,
-        attachmentId: ATTACHMENT_ID,
-      });
+      const response = await postTemplateFile(
+        { templateId: TEMPLATE_ID, attachmentId: ATTACHMENT_ID },
+        EXCALIDRAW,
+      );
 
       expect(response.statusCode).toBe(200);
       expect(attachmentRepo.updateAttachment).toHaveBeenCalled();
@@ -521,10 +531,10 @@ describe.each([
         spaceId: null,
       });
 
-      const response = await postTemplateFile({
-        templateId: TEMPLATE_ID,
-        attachmentId: ATTACHMENT_ID,
-      });
+      const response = await postTemplateFile(
+        { templateId: TEMPLATE_ID, attachmentId: ATTACHMENT_ID },
+        DRAWIO,
+      );
 
       expect(response.statusCode).toBe(400);
       expect(await storage.leftovers()).toEqual([]);
@@ -633,6 +643,21 @@ describe.each([
         attachmentRepo.findById.mockResolvedValueOnce(undefined);
         return info().catch((err) => err);
       };
+
+      it('returns the stored diagram type independently of the filename', async () => {
+        attachmentRepo.findById.mockResolvedValue({
+          ...FILE,
+          type: 'file',
+          fileName: 'workflow.svg',
+          diagramType: 'excalidraw',
+        });
+        templateRepo.findById.mockResolvedValue({ id: FILE.templateId });
+
+        await expect(info()).resolves.toMatchObject({
+          fileName: 'workflow.svg',
+          diagramType: 'excalidraw',
+        });
+      });
 
       it('answers a non-member exactly like an unknown id', async () => {
         const expected = await unknownIdError();
@@ -769,13 +794,130 @@ describe.each([
       await storage.put(EXISTING_KEY, existing);
     });
 
+    it.each<[string, string, Record<string, string>]>([
+      ['report.pdf', 'report.pdf', {}],
+      ['logo.svg', 'logo.svg', { type: 'file' }],
+      ['logo.svg', DRAWIO, { type: 'diagram' }],
+      ['other.drawio.svg', 'other.drawio.svg', { type: 'diagram' }],
+      ['Diagram.drawio.svg', 'Diagram.drawio.svg', { type: 'diagram' }],
+      [DRAWIO, DRAWIO, {}],
+      [DRAWIO, DRAWIO, { type: 'file' }],
+      [DRAWIO, DRAWIO, { type: 'diagram' }],
+      [EXCALIDRAW, EXCALIDRAW, { type: 'diagram' }],
+    ])(
+      'refuses to overwrite unflagged %s with %s and fields %j',
+      async (storedName, incomingName, fields) => {
+        const upload = await postFile(storedName, existing);
+        expect(upload.statusCode).toBe(200);
+        const attachment = upload.json();
+        expect(attachment.diagramType).toBeNull();
+        attachmentRepo.findById.mockResolvedValue(attachment);
+
+        const replacement = Buffer.from('replacement');
+        const response = await postFile(incomingName, replacement, {
+          attachmentId: attachment.id,
+          ...fields,
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(await storage.read(attachment.filePath)).toEqual(existing);
+        expect(attachmentRepo.updateAttachment).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      [DRAWIO, 'drawio'],
+      [EXCALIDRAW, 'excalidraw'],
+    ])(
+      'keeps the ID, path and diagram type when updating %s',
+      async (fileName, diagramType) => {
+        const upload = await postFile(
+          fileName,
+          Buffer.from('<svg><rect width="5"/></svg>'),
+          { type: 'diagram' },
+        );
+        expect(upload.statusCode).toBe(200);
+        const attachment = upload.json();
+        expect(attachment.diagramType).toBe(diagramType);
+        attachmentRepo.findById.mockResolvedValue(attachment);
+
+        const content = Buffer.from('<svg><circle r="5"/></svg>');
+        const response = await postFile(fileName, content, {
+          attachmentId: attachment.id,
+          type: 'diagram',
+        });
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+          id: attachment.id,
+          diagramType,
+          fileName,
+          filePath: attachment.filePath,
+        });
+        expect(await storage.read(attachment.filePath)).toEqual(content);
+      },
+    );
+
+    it('refuses a diagram upload with an unrecognized filename', async () => {
+      const response = await postFile('logo.svg', existing, {
+        type: 'diagram',
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(attachmentRepo.insertAttachment).not.toHaveBeenCalled();
+    });
+
+    it('updates a backfilled diagram whose importer stored an uppercase extension', async () => {
+      attachmentRepo.findById.mockResolvedValue({
+        ...pageDiagram,
+        fileExt: '.SVG',
+      });
+      const content = Buffer.from('<svg/>');
+      const response = await postFile(DRAWIO, content, {
+        attachmentId: ATTACHMENT_ID,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(await storage.read(EXISTING_KEY)).toEqual(content);
+    });
+
+    it('refuses to replace a stored draw.io diagram with an Excalidraw file', async () => {
+      const response = await postFile(EXCALIDRAW, Buffer.from('replacement'), {
+        attachmentId: ATTACHMENT_ID,
+        type: 'diagram',
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(await storage.read(EXISTING_KEY)).toEqual(existing);
+      expect(attachmentRepo.updateAttachment).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { pageId: 'another-page' },
+      { workspaceId: 'another-workspace' },
+      { type: 'page-cover' },
+      { diagramType: 'excalidraw' },
+    ])(
+      'rejects an overwrite for a stored attachment with %j',
+      async (other) => {
+        attachmentRepo.findById.mockResolvedValue({ ...pageDiagram, ...other });
+        const response = await postFile(DRAWIO, randomBytes(1024), {
+          attachmentId: ATTACHMENT_ID,
+        });
+        expect(response.statusCode).toBe(400);
+        expect(await storage.read(EXISTING_KEY)).toEqual(existing);
+        expect(attachmentRepo.updateAttachment).not.toHaveBeenCalled();
+      },
+    );
+
     it.each([
       ['below', bytes('1mb')],
       ['exactly at', bytes('2mb')],
     ])('replaces the file with one %s the limit', async (_label, size) => {
       const content = randomBytes(size);
 
-      const response = await post(content, { attachmentId: ATTACHMENT_ID });
+      const response = await postFile(DRAWIO, content, {
+        attachmentId: ATTACHMENT_ID,
+      });
 
       expect(response.statusCode).toBe(200);
       expect(await storage.read(EXISTING_KEY)).toEqual(content);
@@ -793,7 +935,7 @@ describe.each([
       async (_label, limit, size) => {
         uploadLimit = limit;
 
-        const response = await post(randomBytes(bytes(size)), {
+        const response = await postFile(DRAWIO, randomBytes(bytes(size)), {
           attachmentId: ATTACHMENT_ID,
         });
 
@@ -812,7 +954,7 @@ describe.each([
         app,
         '/files/upload',
         Buffer.concat([
-          multipartHead('diagram.pdf', {
+          multipartHead(DRAWIO, {
             pageId: PAGE_ID,
             attachmentId: ATTACHMENT_ID,
           }),

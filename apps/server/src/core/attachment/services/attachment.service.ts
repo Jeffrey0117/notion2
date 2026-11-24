@@ -16,7 +16,12 @@ import {
 } from '../attachment.utils';
 import { v4 as uuid4, v7 as uuid7 } from 'uuid';
 import { AttachmentRepo } from '@docmost/db/repos/attachment/attachment.repo';
-import { AttachmentType, validImageExtensions } from '../attachment.constants';
+import {
+  AttachmentType,
+  DIAGRAM_TYPE_BY_FILE_NAME,
+  type DiagramType,
+  validImageExtensions,
+} from '../attachment.constants';
 import { KyselyDB, KyselyTransaction } from '@docmost/db/types/kysely.types';
 import { Attachment, User, Workspace } from '@docmost/db/types/entity.types';
 import { InjectKysely } from 'nestjs-kysely';
@@ -61,6 +66,7 @@ export class AttachmentService {
     workspaceId: string;
     attachmentId?: string;
     type?: AttachmentType.File | AttachmentType.PageCover;
+    isDiagramUpload?: boolean;
   }) {
     const { filePromise, pageId, templateId, spaceId, userId, workspaceId } =
       opts;
@@ -69,6 +75,11 @@ export class AttachmentService {
       skipBuffer: true,
     });
 
+    const diagramType = DIAGRAM_TYPE_BY_FILE_NAME.get(preparedFile.fileName);
+    if (opts.isDiagramUpload && !diagramType) {
+      throw new BadRequestException('Invalid diagram filename');
+    }
+
     if (
       type === AttachmentType.PageCover &&
       !COVER_IMAGE_MIME_TYPES.includes(preparedFile.mimeType)
@@ -76,13 +87,12 @@ export class AttachmentService {
       throw new BadRequestException('Cover must be a JPG, PNG or WebP image');
     }
 
-    let isUpdate = false;
-    let attachmentId = null;
+    let existingAttachment: Attachment | undefined;
 
     // passing attachmentId to allow for updating diagrams
     // instead of creating new files for each save
     if (opts?.attachmentId) {
-      const existingAttachment = await this.attachmentRepo.findById(
+      existingAttachment = await this.attachmentRepo.findById(
         opts.attachmentId,
       );
       if (!existingAttachment) {
@@ -94,18 +104,20 @@ export class AttachmentService {
       if (
         (existingAttachment.pageId ?? null) !== (pageId ?? null) ||
         (existingAttachment.templateId ?? null) !== (templateId ?? null) ||
-        existingAttachment.fileExt !== preparedFile.fileExtension ||
+        existingAttachment.type !== AttachmentType.File ||
+        !existingAttachment.diagramType ||
+        existingAttachment.diagramType !== diagramType ||
+        existingAttachment.fileName !== preparedFile.fileName ||
         existingAttachment.workspaceId !== workspaceId
       ) {
         throw new BadRequestException('File attachment does not match');
       }
-      attachmentId = opts.attachmentId;
-      isUpdate = true;
-    } else {
-      attachmentId = uuid7();
     }
 
-    const filePath = `${getAttachmentFolderPath(AttachmentType.File, workspaceId)}/${attachmentId}/${preparedFile.fileName}`;
+    const attachmentId = existingAttachment?.id ?? uuid7();
+    const filePath =
+      existingAttachment?.filePath ??
+      `${getAttachmentFolderPath(AttachmentType.File, workspaceId)}/${attachmentId}/${preparedFile.fileName}`;
 
     // Update fileSize from the consumed stream
     const isCover = type === AttachmentType.PageCover;
@@ -129,7 +141,7 @@ export class AttachmentService {
 
     let attachment: Attachment = null;
     try {
-      if (isUpdate) {
+      if (existingAttachment) {
         attachment = await this.attachmentRepo.updateAttachment(
           {
             fileSize: preparedFile.fileSize,
@@ -143,6 +155,7 @@ export class AttachmentService {
           preparedFile,
           filePath,
           type,
+          diagramType: opts.isDiagramUpload ? diagramType : null,
           userId,
           spaceId,
           workspaceId,
@@ -293,6 +306,7 @@ export class AttachmentService {
     preparedFile: PreparedFile;
     filePath: string;
     type: AttachmentType;
+    diagramType?: DiagramType | null;
     userId: string;
     workspaceId: string;
     pageId?: string;
@@ -316,6 +330,7 @@ export class AttachmentService {
       {
         id: attachmentId,
         type: type,
+        diagramType: opts.diagramType ?? null,
         filePath: filePath,
         fileName: preparedFile.fileName,
         fileSize: preparedFile.fileSize,
@@ -396,6 +411,7 @@ export class AttachmentService {
         await this.attachmentRepo.insertAttachment({
           id: newId,
           type: source.type,
+          diagramType: source.diagramType,
           filePath: newPath,
           fileName: source.fileName,
           fileSize: source.fileSize,

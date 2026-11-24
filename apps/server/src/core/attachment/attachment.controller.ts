@@ -175,7 +175,9 @@ export class AttachmentController {
 
     const type = file.fields?.type?.value;
     const isCover = type === AttachmentType.PageCover;
-    const isFile = type === undefined || type === AttachmentType.File;
+    const isDiagramUpload = type === 'diagram';
+    const isFile =
+      type === undefined || type === AttachmentType.File || isDiagramUpload;
     if ((!isFile && !isCover) || (isCover && (attachmentId || templateId))) {
       throw new BadRequestException('Invalid attachment type');
     }
@@ -190,6 +192,7 @@ export class AttachmentController {
         workspaceId: workspace.id,
         attachmentId: attachmentId,
         type: isCover ? AttachmentType.PageCover : AttachmentType.File,
+        isDiagramUpload,
       });
 
       this.auditService.log({

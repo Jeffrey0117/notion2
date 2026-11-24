@@ -6,6 +6,7 @@ export interface IAttachment {
   fileExt: string;
   mimeType: string;
   type: string;
+  diagramType: "drawio" | "excalidraw" | null;
   creatorId: string;
   pageId: string | null;
   templateId?: string | null;

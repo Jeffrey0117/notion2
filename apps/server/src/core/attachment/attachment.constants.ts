@@ -7,6 +7,13 @@ export enum AttachmentType {
   PageCover = 'page-cover',
 }
 
+export type DiagramType = 'drawio' | 'excalidraw';
+
+export const DIAGRAM_TYPE_BY_FILE_NAME = new Map<string, DiagramType>([
+  ['diagram.drawio.svg', 'drawio'],
+  ['diagram.excalidraw.svg', 'excalidraw'],
+]);
+
 export const validImageExtensions = ['.jpg', '.png', '.jpeg'];
 export const MAX_AVATAR_SIZE = '10MB';
 

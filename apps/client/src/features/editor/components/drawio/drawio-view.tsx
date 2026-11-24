@@ -60,7 +60,7 @@ export default function DrawioView(props: NodeViewProps) {
     const attachment: IAttachment = await uploadFile(
       drawioSVGFile,
       uploadTarget,
-      attachmentIdRef.current,
+      { type: "diagram", attachmentId: attachmentIdRef.current },
     );
     attachmentIdRef.current = attachment.id;
 
