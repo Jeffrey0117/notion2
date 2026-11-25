@@ -12,6 +12,7 @@ import {
   ru,
   uk,
   zhCN,
+  zhTW,
 } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n.ts";
@@ -29,6 +30,7 @@ const LOCALE_MAP: Record<string, Locale> = {
   "ru-RU": ru,
   "uk-UA": uk,
   "zh-CN": zhCN,
+  "zh-TW": zhTW,
 };
 
 export function getDateFnsLocale(language?: string): Locale {

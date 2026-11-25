@@ -31,6 +31,7 @@ export const SUPPORTED_LOCALES = [
   'uk-UA',
   'ru-RU',
   'zh-CN',
+  'zh-TW',
 ];
 
 export const DISALLOWED_HOSTNAMES = [

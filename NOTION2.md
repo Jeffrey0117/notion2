@@ -63,3 +63,10 @@ powershell Start-Process -WindowStyle Hidden notion2-start.cmd
 
 資料庫（Bases）、模板在 Docmost 是付費企業版，伺服器端程式不在這個 repo
 （`apps/server/src/ee` 是空的私有 submodule）。要資料庫得自己寫，不能拿它的。
+
+## 繁體中文
+
+`apps/client/public/locales/zh-TW/translation.json`，預設語言就是它（`i18n.ts`）。
+一開始是用 opencc-js 把簡體那份轉成台灣用語，再手改幾句；之後直接改這個檔就好。
+介面上新加的字記得在這裡補一句，沒補會顯示英文。
+合上游後如果簡體那份多了新句子，這份要跟著補。

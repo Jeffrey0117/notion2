@@ -31,6 +31,7 @@ const DAYJS_LOCALES: Record<string, DayjsLocale> = {
   "ru-RU": { id: "ru", weekStart: 1, load: () => import("dayjs/locale/ru") },
   "uk-UA": { id: "uk", weekStart: 1, load: () => import("dayjs/locale/uk") },
   "zh-CN": { id: "zh-cn", weekStart: 1, load: () => import("dayjs/locale/zh-cn") },
+  "zh-TW": { id: "zh-tw", weekStart: 0, load: () => import("dayjs/locale/zh-tw") },
 };
 
 function resolveDayjsLocale(language: string | undefined): DayjsLocale {

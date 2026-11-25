@@ -16,4 +16,5 @@ export const LANGUAGE_OPTIONS = [
   { value: "uk-UA", label: "Українська (Ukrainian)" },
   { value: "ru-RU", label: "Русский (Russian)" },
   { value: "zh-CN", label: "中文 (简体)" },
+  { value: "zh-TW", label: "中文 (繁體)" },
 ];

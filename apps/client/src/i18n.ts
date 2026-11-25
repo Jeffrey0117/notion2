@@ -20,7 +20,8 @@ i18n
   // init i18next
   // for all options read: https://www.i18next.com/overview/configuration-options
   .init({
-    lng: serverLanguage,
+    // notion2: Traditional Chinese unless the server or the account says otherwise.
+    lng: serverLanguage ?? "zh-TW",
     fallbackLng: "en-US",
     debug: false,
     load: 'currentOnly',
