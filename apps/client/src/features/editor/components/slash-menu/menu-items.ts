@@ -31,6 +31,7 @@ import {
   IconClockHour3,
   IconAppWindow,
   IconSitemap,
+  IconDatabase,
   IconColumns3,
   IconColumns2,
   IconTag,
@@ -595,6 +596,20 @@ const CommandGroups: SlashMenuGroupedItemsType = {
       icon: IconMoodSmile,
       command: ({ editor, range }: CommandProps) => {
         editor.chain().focus().deleteRange(range).insertContent(":").run();
+      },
+    },
+    {
+      title: "Database",
+      description: "A table or board whose rows are pages.",
+      searchTerms: ["database", "table", "board", "kanban", "資料庫", "表格", "看板"],
+      icon: IconDatabase,
+      command: ({ editor, range }: CommandProps) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .insertN2Database({ databaseId: null })
+          .run();
       },
     },
     {

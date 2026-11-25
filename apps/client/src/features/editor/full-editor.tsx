@@ -1,4 +1,5 @@
 import { EditorSpaceContext } from "@/features/editor/components/recently-updated/editor-space-context";
+import { RowProperties } from "@/notion2/database/row-properties.tsx";
 import classes from "@/features/editor/styles/editor.module.css";
 import React, { useEffect } from "react";
 import { TitleEditor } from "@/features/editor/title-editor";
@@ -159,6 +160,7 @@ export function FullEditor({
         contributors={contributors}
         readOnly={!editable}
       />
+      <RowProperties pageId={pageId} editable={editable} />
       <div
         className={clsx(classes.documentBody, classes.documentReveal)}
         onClick={handleImageLink}

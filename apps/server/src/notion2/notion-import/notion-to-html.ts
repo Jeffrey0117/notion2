@@ -1,4 +1,4 @@
-import { collectionToHtml } from './notion-collection';
+import { ImportedDatabase, readCollection } from './notion-collection';
 import { getBlock, NotionBlock, NotionRecordMap } from './notion-record';
 import { escapeHtml, plainText, richTextToHtml } from './notion-rich-text';
 
@@ -9,11 +9,22 @@ export interface ConvertedPage {
   html: string;
   /** sub-pages found in the body, in order, for the caller to import next */
   childPageIds: string[];
+  /**
+   * Databases found in the body. Each one is in the HTML as a database block
+   * whose id is databasePlaceholder(index); the caller creates the database
+   * and swaps the real id in.
+   */
+  databases: ImportedDatabase[];
+}
+
+export function databasePlaceholder(index: number): string {
+  return `n2db-placeholder-${index}`;
 }
 
 interface Context {
   map: NotionRecordMap;
   childPageIds: string[];
+  databases: ImportedDatabase[];
   /** true while converting the inside of a column */
   inColumn: boolean;
 }
@@ -109,6 +120,14 @@ function calloutHtml(block: NotionBlock, ctx: Context): string {
   return `<div data-type="callout" data-callout-type="default"${iconAttr}>${body}</div>`;
 }
 
+function databaseHtml(block: NotionBlock, ctx: Context): string {
+  const database = readCollection(block, ctx.map);
+  if (!database) return '<p><em>（這個資料庫沒有公開，抓不到內容）</em></p>';
+  ctx.databases.push(database);
+  const id = databasePlaceholder(ctx.databases.length - 1);
+  return `<div data-type="n2Database" data-database-id="${id}"></div>`;
+}
+
 function blockToHtml(block: NotionBlock, ctx: Context): string {
   const text = () => richTextToHtml(block.properties?.title, ctx.map);
   const withChildren = (html: string) => `${html}${childrenHtml(block, ctx)}`;
@@ -155,7 +174,7 @@ function blockToHtml(block: NotionBlock, ctx: Context): string {
       return `<p><code>${escapeHtml(plainText(block.properties?.title))}</code></p>`;
     case 'collection_view':
     case 'collection_view_page':
-      return collectionToHtml(block, ctx.map);
+      return databaseHtml(block, ctx);
     case 'page': {
       ctx.childPageIds.push(block.id);
       return `<p>📄 ${escapeHtml(plainText(block.properties?.title) || 'Untitled')}</p>`;
@@ -205,10 +224,10 @@ export function notionPageToHtml(map: NotionRecordMap, pageId: string): Converte
     throw new Error('This Notion page is not public, or the link is wrong');
   }
 
-  const ctx: Context = { map, childPageIds: [], inColumn: false };
+  const ctx: Context = { map, childPageIds: [], databases: [], inColumn: false };
   const html =
     page.type === 'collection_view_page'
-      ? collectionToHtml(page, map)
+      ? databaseHtml(page, ctx)
       : blocksToHtml(page.content ?? [], ctx);
 
   const icon = page.format?.page_icon;
@@ -217,5 +236,6 @@ export function notionPageToHtml(map: NotionRecordMap, pageId: string): Converte
     icon: isEmoji(icon) ? icon : null,
     html: html || '<p></p>',
     childPageIds: ctx.childPageIds,
+    databases: ctx.databases,
   };
 }

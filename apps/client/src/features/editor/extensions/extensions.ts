@@ -53,6 +53,7 @@ import {
   TableHeaderPin,
   TableReadonlySort,
   Subpages,
+  N2Database,
   RecentlyUpdated,
   ItemsByLabel,
   Heading,
@@ -112,6 +113,7 @@ import ExcalidrawView from "@/features/editor/components/excalidraw/excalidraw-v
 import EmbedView from "@/features/editor/components/embed/embed-view.tsx";
 import PdfView from "@/features/editor/components/pdf/pdf-view.tsx";
 import SubpagesView from "@/features/editor/components/subpages/subpages-view.tsx";
+import DatabaseBlock from "@/notion2/database/database-block.tsx";
 import RecentlyUpdatedView from "@/features/editor/components/recently-updated/recently-updated-view.tsx";
 import { PagesByLabelView } from "@/features/editor/components/pages-by-label/pages-by-label-view";
 import IntegrationCardView from "@/features/editor/components/integration-link/integration-card-view.tsx";
@@ -420,6 +422,9 @@ export const mainExtensions = [
   PageBreak,
   Subpages.configure({
     view: SubpagesView,
+  }),
+  N2Database.configure({
+    view: DatabaseBlock,
   }),
   RecentlyUpdated.configure({
     view: RecentlyUpdatedView,

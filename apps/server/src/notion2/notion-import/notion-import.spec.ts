@@ -138,11 +138,20 @@ describe('notionPageToHtml', () => {
     expect(page.html).toContain('<p>📄 Child</p>');
   });
 
-  it('renders a public database as a table: title first, computed columns dropped', () => {
+  it('turns a public database into a database block, computed columns dropped', () => {
     expect(page.html).toContain(
-      '<h3>Tracker</h3><table><thead><tr><th>Name</th><th>Count</th><th>Done</th></tr></thead>' +
-        '<tbody><tr><td>Row A</td><td>3</td><td>✓</td></tr></tbody></table>',
+      '<div data-type="n2Database" data-database-id="n2db-placeholder-0"></div>',
     );
+    expect(page.databases).toEqual([
+      {
+        name: 'Tracker',
+        schema: [
+          { id: 'c0', name: 'Count', type: 'number' },
+          { id: 'c2', name: 'Done', type: 'checkbox' },
+        ],
+        rows: [{ title: 'Row A', values: { c0: 3, c2: true } }],
+      },
+    ]);
   });
 
   it('says so when a database is not public', () => {

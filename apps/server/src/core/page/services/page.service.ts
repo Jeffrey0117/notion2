@@ -490,7 +490,11 @@ export class PageService {
       ])
       .select((eb) => this.pageRepo.withHasChildren(eb))
       .where('deletedAt', 'is', null)
-      .where('spaceId', '=', spaceId);
+      .where('spaceId', '=', spaceId)
+      // notion2: pages that are database rows stay out of the sidebar tree.
+      .where(
+        sql<boolean>`not exists (select 1 from n2_database_rows r where r.page_id = pages.id)`,
+      );
 
     if (pageId) {
       query = query.where('parentPageId', '=', pageId);

@@ -53,16 +53,38 @@ powershell Start-Process -WindowStyle Hidden notion2-start.cmd
 - **貼 Notion 網址抓進來**：匯入視窗最上面那一欄。後端 `POST /api/pages/import-notion-url`
   （`{ url, spaceId }`），只收 `notion.site` / `notion.so` 的 https 網址。一次最多 25 頁、三層。
   用 `notion-client` 走 Notion 的非官方接口，對方沒公開的資料庫抓不到，會在頁面上寫明。
-  資料庫目前只轉成一般表格（最多 8 欄 100 列），公式、關聯、彙總欄位丟掉。
+  公式、關聯、彙總欄位丟掉。
 - **外觀**：`apps/client/src/notion2/notion2.css`（最後載入，蓋過原版樣式）。
   桌面版拿掉最上面那條橫列，帳號、通知、收合、搜尋搬到側欄最上面（`sidebar-top.tsx`）。
 - 動到的原版檔案：`app.module.ts`、`global-app-shell.tsx`、`space-sidebar.tsx`、
   `page-import-modal.tsx`、`main.tsx`，各只有幾行。
 
+- **資料庫**：在頁面裡打 `/資料庫`（或 `/database`）。欄位五種（文字、數字、單選、勾選、日期），
+  兩種看法（表格、看板）。每一列是一個真的頁面，放在空間最上層但不出現在側欄
+  （`page.service.ts` 的側欄查詢多一行排除）。資料在 `n2_databases`、`n2_database_rows` 兩張表。
+  接口在 `/api/n2/databases/`（`create`、`info`、`update`、`delete`、`rows/create`、`rows/update`、`rows/delete`、`row-by-page`）。
+  編輯器區塊叫 `n2Database`，定義在 `packages/editor-ext/src/lib/n2-database`。
+  設計寫在 `docs/superpowers/specs/2026-11-25-database-design.md`。
+  還沒有：行事曆、公式、關聯、篩選排序、多人即時同步（別人改了要重新整理）。
+- 貼 Notion 網址抓進來的資料庫會直接變成這種資料庫（最多 20 欄 200 列）。
+
+## 改完怎麼看
+
+`notion2-rebuild.cmd`：build，過了才重開。用戶端重 build 之後**一定要重開**，
+不然伺服器還拿著舊的首頁檔，瀏覽器會整片空白。
+
+## 測試
+
+- `pnpm --filter ./apps/server exec jest src/notion2`：轉換和驗證的單元測試。
+- `node scripts/notion2/db-check.mjs data/dev-token.txt <spaceId>`：對跑著的 notion2 把資料庫接口整輪打一次，
+  做完會把自己建的東西刪掉。登入憑證用 `scripts/notion2/dev-token.cjs` 產生（用 `.env` 的密鑰簽，6 小時有效）。
+- 雷：寫 jsonb 欄位要 `::text::jsonb`，直接丟 JSON 字串會被驅動程式再包一層變成字串。
+
 ## 沒有的功能
 
-資料庫（Bases）、模板在 Docmost 是付費企業版，伺服器端程式不在這個 repo
-（`apps/server/src/ee` 是空的私有 submodule）。要資料庫得自己寫，不能拿它的。
+Docmost 的資料庫（Bases）和模板是付費企業版，伺服器端程式不在這個 repo
+（`apps/server/src/ee` 是空的私有 submodule），不能拿、不能抄。
+notion2 的資料庫是自己從零寫的，跟它無關。模板還沒有。
 
 ## 繁體中文
 

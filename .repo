@@ -1,7 +1,7 @@
 {
   "repo": 1,
   "name": "notion2",
-  "what": "自己版本的 Notion：fork 自 Docmost（塊編輯器、巢狀頁面），先在本機跑起來，再把對 Notion 不爽的地方一個一個改掉。",
+  "what": "自己版本的 Notion：fork 自 Docmost，加上自己寫的資料庫（表格、看板，每一列是一頁）和貼網址抓 Notion 頁面，在本機跑。",
   "kind": "app",
   "status": "building",
   "work": {
@@ -21,10 +21,65 @@
         "auth": "bearer",
         "params": {
           "type": "object",
-          "required": ["url", "spaceId"],
+          "required": [
+            "url",
+            "spaceId"
+          ],
           "properties": {
-            "url": { "type": "string" },
-            "spaceId": { "type": "string" }
+            "url": {
+              "type": "string"
+            },
+            "spaceId": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "database_info",
+      "what": "讀一個 notion2 資料庫的欄位、看法和所有列；要拿資料庫內容給別的程式用時用。",
+      "how": "http",
+      "http": {
+        "method": "POST",
+        "path": "/api/n2/databases/info",
+        "auth": "bearer",
+        "params": {
+          "type": "object",
+          "required": [
+            "databaseId"
+          ],
+          "properties": {
+            "databaseId": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "database_add_row",
+      "what": "在 notion2 資料庫加一列（同時建立那一列的頁面）；要從外面把資料寫進資料庫時用。",
+      "how": "http",
+      "http": {
+        "method": "POST",
+        "path": "/api/n2/databases/rows/create",
+        "auth": "bearer",
+        "params": {
+          "type": "object",
+          "required": [
+            "databaseId"
+          ],
+          "properties": {
+            "databaseId": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "values": {
+              "type": "object"
+            }
           }
         }
       }

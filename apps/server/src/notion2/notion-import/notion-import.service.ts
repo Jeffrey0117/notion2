@@ -5,7 +5,9 @@ import { generateSlugId } from '../../common/helpers';
 import { jsonToText } from '../../collaboration/collaboration.util';
 import { ImportService } from '../../integrations/import/services/import.service';
 import { NotionRecordMap } from './notion-record';
-import { notionPageToHtml } from './notion-to-html';
+import { databasePlaceholder, notionPageToHtml } from './notion-to-html';
+import { ImportedDatabase } from './notion-collection';
+import { N2DatabaseService } from '../database/database.service';
 import { parseNotionUrl, toDashedId } from './notion-url';
 
 /** One pasted link may pull in sub-pages; keep a single request bounded. */
@@ -29,6 +31,7 @@ export class NotionImportService {
   constructor(
     private readonly pageRepo: PageRepo,
     private readonly importService: ImportService,
+    private readonly databaseService: N2DatabaseService,
   ) {}
 
   /** Copies a public Notion page, and the sub-pages under it, into a space. */
@@ -74,7 +77,13 @@ export class NotionImportService {
       throw new BadRequestException(err.message);
     }
 
-    const content = await this.importService.processHTML(converted.html, target.spaceId);
+    let html = converted.html;
+    for (const [index, imported] of converted.databases.entries()) {
+      const databaseId = await this.createDatabase(imported, target);
+      html = html.replace(databasePlaceholder(index), databaseId);
+    }
+
+    const content = await this.importService.processHTML(html, target.spaceId);
     const position = await this.importService.getNewPagePosition(
       target.spaceId,
       parentPageId ?? undefined,
@@ -109,5 +118,24 @@ export class NotionImportService {
     }
 
     return page;
+  }
+
+  /** Builds a notion2 database, with its rows, from one read out of Notion. */
+  private async createDatabase(imported: ImportedDatabase, target: ImportTarget): Promise<string> {
+    const actor = { userId: target.userId, workspaceId: target.workspaceId };
+    const groupBy = imported.schema.find((column) => column.type === 'select');
+    const views = [
+      { id: 'table', name: '表格', type: 'table' },
+      ...(groupBy ? [{ id: 'board', name: '看板', type: 'board', groupBy: groupBy.id }] : []),
+    ];
+
+    const database = await this.databaseService.create(
+      { spaceId: target.spaceId, name: imported.name, schema: imported.schema, views },
+      actor,
+    );
+    for (const row of imported.rows) {
+      await this.databaseService.createRow(database, { title: row.title, values: row.values }, actor);
+    }
+    return database.id;
   }
 }
