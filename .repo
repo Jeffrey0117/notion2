@@ -1,0 +1,13 @@
+{
+  "repo": 1,
+  "name": "notion2",
+  "what": "自己版本的 Notion：fork 自 Docmost（塊編輯器、巢狀頁面、資料庫），先在本機跑起來，再把對 Notion 不爽的地方一個一個改掉。",
+  "kind": "app",
+  "status": "building",
+  "work": {
+    "guide": "NOTION2.md",
+    "run": "notion2-start.cmd",
+    "build": "pnpm build"
+  },
+  "offers": []
+}
