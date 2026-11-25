@@ -25,6 +25,7 @@ import { installChunkLoadRecovery } from "@/lib/chunk-load-recovery.ts";
 import { AppErrorBoundary } from "@/components/ui/app-error-boundary.tsx";
 import posthog from "posthog-js";
 import { DatesLocaleProvider } from "@/components/dates-locale-provider";
+import "@/notion2/notion2.css";
 
 export const queryClient = new QueryClient({
   defaultOptions: {

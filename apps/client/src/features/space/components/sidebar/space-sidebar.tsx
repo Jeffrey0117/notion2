@@ -135,20 +135,6 @@ export function SpaceSidebar() {
               </div>
             </UnstyledButton>
 
-            <UnstyledButton
-              className={classes.menu}
-              onClick={searchSpotlight.open}
-            >
-              <div className={classes.menuItemInner}>
-                <IconSearch
-                  size={18}
-                  className={classes.menuItemIcon}
-                  stroke={2}
-                />
-                <span>{t("Search")}</span>
-              </div>
-            </UnstyledButton>
-
             <UnstyledButton className={classes.menu} onClick={openSettings}>
               <div className={classes.menuItemInner}>
                 <IconSettings

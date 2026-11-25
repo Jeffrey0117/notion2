@@ -18,6 +18,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { HealthModule } from './integrations/health/health.module';
 import { ExportModule } from './integrations/export/export.module';
 import { ImportModule } from './integrations/import/import.module';
+import { Notion2Module } from './notion2/notion2.module';
 import { SecurityModule } from './integrations/security/security.module';
 import { TelemetryModule } from './integrations/telemetry/telemetry.module';
 import { RedisModule } from '@nestjs-labs/nestjs-ioredis';
@@ -90,6 +91,7 @@ try {
     StaticModule,
     HealthModule,
     ImportModule,
+    Notion2Module,
     ExportModule,
     StorageModule.forRootAsync({
       imports: [EnvironmentModule],

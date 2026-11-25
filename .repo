@@ -1,13 +1,33 @@
 {
   "repo": 1,
   "name": "notion2",
-  "what": "自己版本的 Notion：fork 自 Docmost（塊編輯器、巢狀頁面、資料庫），先在本機跑起來，再把對 Notion 不爽的地方一個一個改掉。",
+  "what": "自己版本的 Notion：fork 自 Docmost（塊編輯器、巢狀頁面），先在本機跑起來，再把對 Notion 不爽的地方一個一個改掉。",
   "kind": "app",
   "status": "building",
   "work": {
     "guide": "NOTION2.md",
     "run": "notion2-start.cmd",
+    "test": "pnpm --filter ./apps/server exec jest src/notion2",
     "build": "pnpm build"
   },
-  "offers": []
+  "offers": [
+    {
+      "id": "import_notion_url",
+      "what": "把一個公開的 Notion 頁面連同子頁抓進來變成 notion2 的頁面；想把別人的 Notion 模板或公開頁面收進來時用。",
+      "how": "http",
+      "http": {
+        "method": "POST",
+        "path": "/api/pages/import-notion-url",
+        "auth": "bearer",
+        "params": {
+          "type": "object",
+          "required": ["url", "spaceId"],
+          "properties": {
+            "url": { "type": "string" },
+            "spaceId": { "type": "string" }
+          }
+        }
+      }
+    }
+  ]
 }

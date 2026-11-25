@@ -1,0 +1,56 @@
+.root {
+  padding: 6px 8px 4px;
+  flex-shrink: 0;
+}
+
+.row {
+  height: 34px;
+}
+
+.account {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  margin-top: 6px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--n2-border);
+  background: var(--n2-surface);
+  color: var(--n2-text-faint);
+
+  &:hover {
+    background: var(--n2-hover);
+  }
+}
+
+.searchLabel {
+  flex: 1;
+  color: var(--n2-text-faint);
+}
+
+.shortcut {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--n2-hover);
+  color: var(--n2-text-muted);
+}
+
+.reopen {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 100;
+
+  @media (max-width: $mantine-breakpoint-sm) {
+    display: none;
+  }
+}

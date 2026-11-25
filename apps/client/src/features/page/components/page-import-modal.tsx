@@ -38,6 +38,7 @@ import { getFileTaskById } from "@/features/file-task/services/file-task-service
 import { queryClient } from "@/main.tsx";
 import { useQueryEmit } from "@/features/websocket/use-query-emit.ts";
 import bytes from "bytes";
+import { NotionUrlImport } from "@/notion2/notion-url-import.tsx";
 
 interface PageImportModalProps {
   spaceId: string;
@@ -331,6 +332,7 @@ function ImportFormatSelection({ spaceId, onClose }: ImportFormatSelection) {
   // @ts-ignore
   return (
     <>
+      <NotionUrlImport spaceId={spaceId} onClose={onClose} />
       <SimpleGrid cols={2}>
         <FileButton
           onChange={handleFileUpload}

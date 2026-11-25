@@ -45,3 +45,21 @@ powershell Start-Process -WindowStyle Hidden notion2-start.cmd
 - 這台機器的 cmd 不會在當前資料夾找指令，`.cmd` 之間互叫要寫 `"%~dp0檔名.cmd"`。
 - `.cmd` 一定要 CRLF（`.gitattributes` 已設）。
 - 從 Bash 直接跑 `pg_ctl start` 會卡住終端，用 `notion2-services.cmd`。
+
+## notion2 自己加的東西
+
+都放在 `apps/server/src/notion2/` 和 `apps/client/src/notion2/`。
+
+- **貼 Notion 網址抓進來**：匯入視窗最上面那一欄。後端 `POST /api/pages/import-notion-url`
+  （`{ url, spaceId }`），只收 `notion.site` / `notion.so` 的 https 網址。一次最多 25 頁、三層。
+  用 `notion-client` 走 Notion 的非官方接口，對方沒公開的資料庫抓不到，會在頁面上寫明。
+  資料庫目前只轉成一般表格（最多 8 欄 100 列），公式、關聯、彙總欄位丟掉。
+- **外觀**：`apps/client/src/notion2/notion2.css`（最後載入，蓋過原版樣式）。
+  桌面版拿掉最上面那條橫列，帳號、通知、收合、搜尋搬到側欄最上面（`sidebar-top.tsx`）。
+- 動到的原版檔案：`app.module.ts`、`global-app-shell.tsx`、`space-sidebar.tsx`、
+  `page-import-modal.tsx`、`main.tsx`，各只有幾行。
+
+## 沒有的功能
+
+資料庫（Bases）、模板在 Docmost 是付費企業版，伺服器端程式不在這個 repo
+（`apps/server/src/ee` 是空的私有 submodule）。要資料庫得自己寫，不能拿它的。

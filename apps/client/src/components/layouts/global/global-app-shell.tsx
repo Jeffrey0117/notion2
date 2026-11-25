@@ -25,6 +25,8 @@ import { useToggleSidebar } from "@/components/layouts/global/hooks/hooks/use-to
 import GlobalSidebar from "@/components/layouts/global/global-sidebar.tsx";
 import { ASIDE_PANEL_ID } from "@/hooks/use-toggle-aside.tsx";
 import { MAIN_CONTENT_ID, SkipToMain } from "@/components/ui/skip-to-main.tsx";
+import { useMediaQuery } from "@mantine/hooks";
+import { SidebarReopen, SidebarTop } from "@/notion2/sidebar-top.tsx";
 
 export default function GlobalAppShell({
   children,
@@ -38,6 +40,8 @@ export default function GlobalAppShell({
   const [mobileOpened] = useAtom(mobileSidebarAtom);
   const toggleMobile = useToggleSidebar(mobileSidebarAtom);
   const [desktopOpened] = useAtom(desktopSidebarAtom);
+  // notion2: no global top bar on desktop; its controls live in the sidebar.
+  const isDesktop = useMediaQuery("(min-width: 48em)", true);
   const [{ isAsideOpen, tab: asideTab }] = useAtom(asideStateAtom);
   const [sidebarWidth, setSidebarWidth] = useAtom(sidebarWidthAtom);
   const [isResizing, setIsResizing] = useState(false);
@@ -95,7 +99,10 @@ export default function GlobalAppShell({
       <SkipToMain />
       <AppShell
       // Mantine reads numeric sizes as rem; the measured banner height is in px
-      header={{ height: `calc(${rem(45)} + ${announcementsHeight}px)` }}
+      header={{
+        height: `calc(${rem(45)} + ${announcementsHeight}px)`,
+        collapsed: isDesktop,
+      }}
       navbar={{
         width: isSpaceRoute ? sidebarWidth : 300,
         breakpoint: "sm",
@@ -114,7 +121,7 @@ export default function GlobalAppShell({
       padding="md"
     >
       <AppShell.Header className={classes.header}>
-        {!sessionPending && (
+        {!sessionPending && !isDesktop && (
           <>
             <AnnouncementBanners surface="app" onHeightChange={setAnnouncementsHeight} />
             <Box px="md" h={45}>
@@ -139,6 +146,7 @@ export default function GlobalAppShell({
       >
         {!sessionPending && (
           <>
+            {isDesktop && <SidebarTop />}
             {isSpaceRoute && (
               <>
                 <div className={classes.resizeHandle} onMouseDown={startResizing} />
@@ -161,6 +169,7 @@ export default function GlobalAppShell({
         mod={{ opened: mobileOpened }}
         onClick={toggleMobile}
       />
+      {isDesktop && !sessionPending && <SidebarReopen />}
       <AppShell.Main
         id={MAIN_CONTENT_ID}
         tabIndex={-1}
